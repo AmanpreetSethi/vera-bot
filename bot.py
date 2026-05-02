@@ -47,7 +47,7 @@ def startup() -> None:
     global composer
     base_dir = Path(__file__).resolve().parent
     state.preload_category_contexts(base_dir=base_dir)
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if api_key:
         composer = ClaudeComposer(api_key=api_key)
 
@@ -126,7 +126,7 @@ def push_context(payload: ContextPushRequest) -> ContextPushResponse:
 @app.post("/v1/tick", response_model=TickResponse)
 def tick(req: TickRequest) -> TickResponse:
     if composer is None:
-        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY is not configured")
+        raise HTTPException(status_code=503, detail="GEMINI_API_KEY is not configured")
 
     actions: List[TickAction] = []
     for trigger_id in req.available_triggers:
@@ -200,7 +200,7 @@ def tick(req: TickRequest) -> TickResponse:
 @app.post("/v1/reply", response_model=ReplyResponse)
 def reply(req: ReplyRequest) -> ReplyResponse:
     if composer is None:
-        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY is not configured")
+        raise HTTPException(status_code=503, detail="GEMINI_API_KEY is not configured")
 
     prior_history = state.get_conversation(req.conversation_id)
     state.append_conversation_message(

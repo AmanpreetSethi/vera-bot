@@ -4,9 +4,9 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from anthropic import Anthropic
+import google.generativeai as genai
 
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+GEMINI_MODEL = "gemini-1.5-flash"
 MAX_TOKENS = 300
 
 
@@ -158,10 +158,11 @@ Return JSON only.
 
 class ClaudeComposer:
     def __init__(self, api_key: Optional[str] = None) -> None:
-        key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        key = api_key or os.getenv("GEMINI_API_KEY", "")
         if not key:
-            raise RuntimeError("ANTHROPIC_API_KEY is not configured")
-        self.client = Anthropic(api_key=key)
+            raise RuntimeError("GEMINI_API_KEY is not configured")
+        genai.configure(api_key=key)
+        self.model = genai.GenerativeModel(model_name=GEMINI_MODEL)
 
     def compose_tick_message(
         self,
@@ -171,18 +172,16 @@ class ClaudeComposer:
         customer_ctx: Optional[Dict[str, Any]],
     ) -> str:
         prompt = build_tick_system_prompt(category_ctx, merchant_ctx, trigger_ctx, customer_ctx)
-        resp = self.client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=MAX_TOKENS,
-            temperature=0.2,
-            system=prompt,
-            messages=[{"role": "user", "content": "Compose the message now."}],
+        resp = self.model.generate_content(
+            [prompt, "Compose the message now."],
+            generation_config=genai.GenerationConfig(
+                temperature=0.2,
+                max_output_tokens=MAX_TOKENS,
+            ),
         )
-        text_chunks: List[str] = []
-        for block in resp.content:
-            if getattr(block, "type", None) == "text":
-                text_chunks.append(block.text)
-        body = "\n".join(text_chunks).strip()
+        body = (resp.text or "").strip()
+        if not body:
+            raise ValueError("Gemini returned empty response for tick composition")
         return body
 
     def compose_reply_action(
@@ -202,24 +201,22 @@ class ClaudeComposer:
             customer_ctx=customer_ctx,
             reply_type=reply_type,
         )
-        resp = self.client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=MAX_TOKENS,
-            temperature=0.1,
-            system=prompt,
-            messages=[{"role": "user", "content": "Generate the next action JSON now."}],
+        resp = self.model.generate_content(
+            [prompt, "Generate the next action JSON now."],
+            generation_config=genai.GenerationConfig(
+                temperature=0.1,
+                max_output_tokens=MAX_TOKENS,
+            ),
         )
-        text_chunks: List[str] = []
-        for block in resp.content:
-            if getattr(block, "type", None) == "text":
-                text_chunks.append(block.text)
-        raw = "\n".join(text_chunks).strip()
+        raw = (resp.text or "").strip()
+        if not raw:
+            raise ValueError("Gemini returned empty response for reply composition")
         parsed = _extract_json(raw)
         if not isinstance(parsed, dict):
-            raise ValueError("Claude response for reply action is not JSON object")
+            raise ValueError("Gemini response for reply action is not JSON object")
         action = parsed.get("action")
         if action not in {"send", "wait", "end"}:
-            raise ValueError("Claude response action is invalid")
+            raise ValueError("Gemini response action is invalid")
         return parsed
 
 
